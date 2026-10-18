@@ -1,0 +1,346 @@
+```html
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CYBERPUNK NEXUS // Comic Batch-to-PDF Converter</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        cyber: {
+                            bg: '#05050a',
+                            panel: '#0a0b14',
+                            border: '#1e2238',
+                            cyan: '#00f0ff',
+                            green: '#00ff66',
+                            pink: '#ff0055',
+                            yellow: '#f4ee01',
+                            muted: '#64748b'
+                        }
+                    },
+                    fontFamily: {
+                        mono: ['Courier New', Courier, monospace]
+                    }
+                }
+            }
+        }
+    </script>
+    <!-- JSZip and jsPDF CDNs -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@500;700&display=swap');
+        
+        body {
+            font-family: 'Rajdhani', sans-serif;
+            background-color: #05050a;
+            color: #e2e8f0;
+            overflow-x: hidden;
+        }
+
+        .sci-fi-mono {
+            font-family: 'Share Tech Mono', monospace;
+        }
+
+        /* Cyberpunk Grid Background */
+        .cyber-grid {
+            background-image: 
+                linear-gradient(to right, rgba(0, 240, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(0, 240, 255, 0.03) 1px, transparent 1px);
+            background-size: 30px 30px;
+        }
+
+        /* HUD Glow & Borders */
+        .hud-border {
+            position: relative;
+            border: 1px solid rgba(0, 240, 255, 0.2);
+            background: rgba(10, 11, 20, 0.85);
+            box-shadow: 0 0 15px rgba(0, 240, 255, 0.05), inset 0 0 15px rgba(0, 240, 255, 0.02);
+        }
+        .hud-border::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; width: 8px; height: 8px;
+            border-top: 2px solid #00f0ff;
+            border-left: 2px solid #00f0ff;
+        }
+        .hud-border::after {
+            content: '';
+            position: absolute;
+            bottom: 0; right: 0; width: 8px; height: 8px;
+            border-bottom: 2px solid #00f0ff;
+            border-right: 2px solid #00f0ff;
+        }
+
+        .hud-button {
+            position: relative;
+            background: linear-gradient(135deg, rgba(0, 240, 255, 0.1), rgba(0, 255, 102, 0.05));
+            border: 1px solid #00f0ff;
+            color: #00f0ff;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            transition: all 0.2s ease;
+        }
+        .hud-button:hover:not(:disabled) {
+            background: rgba(0, 240, 255, 0.25);
+            box-shadow: 0 0 20px rgba(0, 240, 255, 0.4);
+            color: #ffffff;
+        }
+        .hud-button:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            border-color: #64748b;
+            color: #64748b;
+        }
+
+        /* Custom Scrollbar for Terminal & File List */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #05050a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #1e2238;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #00f0ff;
+        }
+
+        @keyframes scanline {
+            0% { transform: translateY(-100%); }
+            100% { transform: translateY(1000%); }
+        }
+        .scanline-effect {
+            position: absolute;
+            top: 0; left: 0; right: 0; height: 2px;
+            background: rgba(0, 240, 255, 0.4);
+            box-shadow: 0 0 10px #00f0ff;
+            animation: scanline 6s linear infinite;
+            pointer-events: none;
+        }
+    </style>
+</head>
+<body class="cyber-grid min-h-screen flex flex-col justify-between relative">
+    
+    <!-- Decorative Scanline overlay -->
+    <div class="scanline-effect"></div>
+
+    <!-- HEADER / HUD TOP BAR -->
+    <header class="border-b border-cyber-border bg-cyber-panel/90 backdrop-blur-md sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-4">
+            <div class="flex items-center space-x-3">
+                <div class="w-3 h-3 bg-cyber-cyan animate-ping rounded-full"></div>
+                <h1 class="text-xl md:text-2xl font-bold tracking-widest text-cyber-cyan sci-fi-mono">
+                    NEXUS-PDF // ARCHIVE CONVERTER v4.2
+                </h1>
+            </div>
+            <div class="flex items-center space-x-6 text-xs sci-fi-mono">
+                <div class="hidden md:block">SYS.STATUS: <span id="sys-status-text" class="text-cyber-green font-bold">ONLINE</span></div>
+                <div class="hidden md:block">RAM QUEUE: <span id="sys-queue-count" class="text-cyber-cyan font-bold">0 FILES</span></div>
+                <!-- Deployment Guide Trigger Button -->
+                <button id="open-deploy-modal" class="hud-button px-3 py-1 rounded text-xs font-bold flex items-center space-x-1.5 transition-all">
+                    <svg class="w-4 h-4 text-cyber-cyan" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path>
+                    </svg>
+                    <span>HOST ONLINE GUIDE</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- MAIN DASHBOARD CONTAINER -->
+    <main class="max-w-7xl mx-auto px-4 py-6 w-full flex-grow grid grid-cols-1 lg:grid-cols-3 gap-6">
+        
+        <!-- LEFT / MAIN PANEL: Dropzone & Conversion Control -->
+        <div class="lg:col-span-2 flex flex-col gap-6">
+            
+            <!-- DROPZONE -->
+            <div id="drop-zone" class="hud-border p-8 rounded-lg text-center cursor-pointer transition-all duration-300 hover:border-cyber-cyan group relative">
+                <input type="file" id="file-input" multiple accept=".zip,.cbz" class="absolute inset-0 opacity-0 cursor-pointer w-full h-full z-10">
+                <div class="flex flex-col items-center justify-center space-y-4">
+                    <div class="w-16 h-16 rounded-full bg-cyber-cyan/10 border border-cyber-cyan/30 flex items-center justify-center group-hover:scale-110 transition-transform">
+                        <svg class="w-8 h-8 text-cyber-cyan" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+                        </svg>
+                    </div>
+                    <div>
+                        <h3 class="text-lg font-bold text-cyber-cyan tracking-wider">INITIATE FILE INGESTION</h3>
+                        <p class="text-sm text-cyber-muted mt-1">Drag & Drop your comic ZIP/CBZ archives here, or click to select hundreds of files</p>
+                    </div>
+                    <div class="sci-fi-mono text-xs text-cyber-yellow bg-cyber-yellow/10 px-3 py-1 rounded border border-cyber-yellow/20 inline-block">
+                        SUPPORTS: .ZIP, .CBZ (AUTO-SORTING ALPHANUMERIC)
+                    </div>
+                </div>
+            </div>
+
+            <!-- QUEUE MANAGEMENT & CONTROLS -->
+            <div class="hud-border p-5 rounded-lg flex flex-col gap-4">
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex items-center space-x-2">
+                        <span class="w-2 h-2 rounded-full bg-cyber-cyan"></span>
+                        <h2 class="text-sm font-bold sci-fi-mono tracking-wider">INGESTED BATCH QUEUE (<span id="queue-badge">0</span>)</h2>
+                    </div>
+                    <div class="flex items-center space-x-2">
+                        <button id="clear-btn" class="px-3 py-1 text-xs sci-fi-mono border border-cyber-pink text-cyber-pink hover:bg-cyber-pink/10 rounded transition-colors">
+                            PURGE QUEUE
+                        </button>
+                        <button id="convert-btn" disabled class="hud-button px-5 py-2 rounded text-sm font-bold sci-fi-mono flex items-center space-x-2">
+                            <svg class="w-4 h-4 animate-spin hidden" id="convert-spinner" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <span id="convert-btn-text">START BATCH CONVERSION</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- FILE LIST PREVIEW SCROLLER -->
+                <div id="file-list-container" class="bg-black/40 border border-cyber-border rounded h-48 overflow-y-auto p-3 space-y-2 sci-fi-mono text-xs">
+                    <div class="text-cyber-muted text-center py-12 italic">No archives loaded into buffer memory...</div>
+                </div>
+
+                <!-- DOWNLOAD MASTER ARCHIVE CONTAINER (Hidden until ready) -->
+                <div id="download-section" class="hidden border border-cyber-green bg-cyber-green/10 p-4 rounded flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <div>
+                        <div class="text-cyber-green font-bold sci-fi-mono text-sm">BATCH CONVERSION COMPLETE</div>
+                        <div class="text-xs text-cyber-muted sci-fi-mono mt-0.5">All PDFs compiled successfully into master output buffer.</div>
+                    </div>
+                    <button id="download-master-btn" class="w-full sm:w-auto px-6 py-3 bg-cyber-green text-black font-bold sci-fi-mono rounded tracking-wider hover:bg-cyber-green/80 transition-all shadow-[0_0_20px_rgba(0,255,102,0.4)] flex items-center justify-center space-x-2">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                        </svg>
+                        <span>DOWNLOAD MASTER ZIP (ALL PDFs)</span>
+                    </button>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- RIGHT / HUD METRICS & TERMINAL LOGS -->
+        <div class="flex flex-col gap-6">
+            
+            <!-- METRICS PANEL -->
+            <div class="hud-border p-5 rounded-lg flex flex-col gap-4">
+                <div class="flex items-center justify-between">
+                    <h2 class="text-sm font-bold sci-fi-mono tracking-wider text-cyber-cyan">HUD TELEMETRY</h2>
+                    <span class="sci-fi-mono text-xs text-cyber-muted">SEC.01</span>
+                </div>
+
+                <!-- Progress Bar -->
+                <div class="space-y-2">
+                    <div class="flex justify-between text-xs sci-fi-mono">
+                        <span class="text-cyber-muted">PROGRESS:</span>
+                        <span id="progress-percent" class="text-cyber-cyan font-bold">0%</span>
+                    </div>
+                    <div class="w-full bg-cyber-border h-3 rounded overflow-hidden p-0.5 border border-cyber-border">
+                        <div id="progress-bar-fill" class="bg-gradient-to-r from-cyber-cyan to-cyber-green h-full w-0 transition-all duration-200 shadow-[0_0_10px_#00f0ff]"></div>
+                    </div>
+                    <div class="flex justify-between text-[11px] sci-fi-mono text-cyber-muted">
+                        <span id="progress-count-text">0 / 0 ARCHIVES</span>
+                        <span id="eta-text">ETA: --:--</span>
+                    </div>
+                </div>
+
+                <!-- Quick Stats Grid -->
+                <div class="grid grid-cols-2 gap-3 pt-2">
+                    <div class="bg-black/40 border border-cyber-border p-3 rounded">
+                        <div class="text-[10px] sci-fi-mono text-cyber-muted">SUCCESSFUL</div>
+                        <div id="stat-success" class="text-lg font-bold text-cyber-green sci-fi-mono mt-1">0</div>
+                    </div>
+                    <div class="bg-black/40 border border-cyber-border p-3 rounded">
+                        <div class="text-[10px] sci-fi-mono text-cyber-muted">ERRORS/SKIPPED</div>
+                        <div id="stat-errors" class="text-lg font-bold text-cyber-pink sci-fi-mono mt-1">0</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- TERMINAL LOGS -->
+            <div class="hud-border p-5 rounded-lg flex flex-col flex-grow min-h-[300px]">
+                <div class="flex items-center justify-between mb-3">
+                    <h2 class="text-sm font-bold sci-fi-mono tracking-wider text-cyber-cyan flex items-center space-x-2">
+                        <span class="w-2 h-2 bg-cyber-green rounded-full animate-ping"></span>
+                        <span>SYSTEM TERMINAL LOGS</span>
+                    </h2>
+                    <button id="clear-logs" class="text-[10px] sci-fi-mono text-cyber-muted hover:text-cyber-cyan underline">CLEAR</button>
+                </div>
+                <div id="terminal-logs" class="bg-black/60 border border-cyber-border rounded flex-grow p-3 font-mono text-xs overflow-y-auto max-h-[350px] space-y-1 select-text">
+                    <div class="text-cyber-muted">[00:00:00] SYSTEM INITIALIZED. WAITING FOR FILE INPUT...</div>
+                    <div class="text-cyber-cyan">[00:00:00] READY TO PROCESS LARGE BATCH ARCHIVES (ZIP/CBZ).</div>
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="border-t border-cyber-border bg-cyber-panel/90 py-3 text-center text-xs sci-fi-mono text-cyber-muted">
+        <div>CYBERPUNK SECURE CLIENT-SIDE SANDBOX // NO DATA TRANSFERRED TO EXTERNAL SERVERS</div>
+    </footer>
+
+    <!-- DEPLOYMENT GUIDE MODAL -->
+    <div id="deploy-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm hidden">
+        <div class="hud-border w-full max-w-3xl max-h-[90vh] overflow-y-auto rounded-lg p-6 m-4 relative bg-cyber-panel shadow-[0_0_30px_rgba(0,240,255,0.15)]">
+            <!-- Modal Header -->
+            <div class="flex items-center justify-between pb-4 border-b border-cyber-border mb-4">
+                <div class="flex items-center space-x-3">
+                    <span class="w-3 h-3 bg-cyber-cyan rounded-full"></span>
+                    <h2 class="text-lg font-bold sci-fi-mono text-cyber-cyan tracking-wider">HOSTING & DEPLOYMENT MATRIX</h2>
+                </div>
+                <button id="close-deploy-modal" class="text-cyber-muted hover:text-cyber-pink sci-fi-mono text-lg px-2 font-bold">&times;</button>
+            </div>
+
+            <!-- Modal Content -->
+            <div class="space-y-6 sci-fi-mono text-xs md:text-sm text-slate-300">
+                <div class="bg-cyber-cyan/10 border border-cyber-cyan/30 p-3 rounded text-cyber-cyan">
+                    <strong>NOTE:</strong> Because this app runs 100% locally in your web browser using client-side WebAssembly, JavaScript, and RAM (no server backend storage required), you can host this single HTML file for <strong>completely free</strong> on numerous platforms instantly!
+                </div>
+
+                <!-- Option 1: GitHub Pages -->
+                <div class="border border-cyber-border p-4 rounded bg-black/40 space-y-2">
+                    <div class="flex items-center justify-between">
+                        <h3 class="font-bold text-cyber-green text-base">METHOD 01 // GITHUB PAGES (RECOMMENDED)</h3>
+                        <span class="bg-cyber-green/20 text-cyber-green px-2 py-0.5 rounded text-[10px]">FREE / PERMANENT</span>
+                    </div>
+                    <p class="text-cyber-muted text-xs">Host directly from your GitHub repository with automatic HTTPS.</p>
+                    <ol class="list-decimal list-inside space-y-1 text-slate-300 pl-2">
+                        <li>Save this code file locally on your computer and name it <code class="text-cyber-cyan bg-black/60 px-1 py-0.5 rounded">index.html</code>.</li>
+                        <li>Create a new public repository on <a href="https://github.com" target="_blank" class="text-cyber-cyan underline">GitHub</a>.</li>
+                        <li>Upload or push your <code class="text-cyber-cyan">index.html</code> file to the root of the repository main branch.</li>
+                        <li>Go to your repository <strong>Settings</strong> &gt; <strong>Pages</strong>.</li>
+                        <li>Under <em>Build and deployment</em>, set the Branch to <code class="text-cyber-cyan">main</code> (or <code class="text-cyber-cyan">master</code>) and folder to <code class="text-cyber-cyan">/ (root)</code>, then click <strong>Save</strong>.</li>
+                        <li>Your app will be live within 1 minute at <code class="text-cyber-cyan">https://yourusername.github.io/repository-name</code>!</li>
+                    </ol>
+                </div>
+
+                <!-- Option 2: Vercel -->
+                <div class="border border-cyber-border p-4 rounded bg-black/40 space-y-2">
+                    <div class="flex items-center justify-between">
+                        <h3 class="font-bold text-cyber-cyan text-base">METHOD 02 // VERCEL DEPLOYMENT</h3>
+                        <span class="bg-cyber-cyan/20 text-cyber-cyan px-2 py-0.5 rounded text-[10px]">FAST & SEAMLESS</span>
+                    </div>
+                    <p class="text-cyber-muted text-xs">Lightning fast global CDN deployment.</p>
+                    <ol class="list-decimal list-inside space-y-1 text-slate-300 pl-2">
+                        <li>Install Vercel CLI via terminal (<code class="text-cyber-yellow">npm i -g vercel</code>) OR log into <a href="https://vercel.com" target="_blank" class="text-cyber-cyan underline">Vercel Dashboard</a>.</li>
+                        <li>If using the dashboard, click <strong>Add New...</strong> &gt; <strong>Project</strong> and import your GitHub repo containing <code class="text-cyber-cyan">index.html</code>.</li>
+                        <li>Click <strong>Deploy</strong> with default settings (no build command needed since it's a static HTML file).</li>
+                        <li>Vercel will provide an instant production URL with free SSL.</li>
+                    </ol>
+                </div>
+
+                <!-- Option 3: Netlify Drop -->
+                <div class="border border-cyber-border p-4 rounded bg-black/40 space-y-2">
+                    <div class="flex items-center justify-between">
+                        <h3 class="font-bold text-cyber-yellow text-base">METHOD 03 // NETLIFY DROP (NO CODE REPO NEEDED)</h3>
+                        <span class="bg-cyber-yellow/20 text-cyber-yellow px-2 py-0.5 rounded text-[10px]">INSTANT DRAG & DROP</span>
+                    </div>
+                    <p c
